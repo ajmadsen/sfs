@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <title>Files</title>
+</head>
+<body>
+<p>
+  <h3>Upload</h3>
+  <em>File size is currently limited to 100 MB</em>
+  <form action="/add_file" method="post" accept-charset="utf-8" enctype="multipart/form-data">
+    <input type="file" name="file" /><br/>
+    <input type="submit" value="Upload" />
+  </form> 
+</p>
+<p>
+  <h3>File list</h3>
+  {{ if len .Files }}
+    <ul>
+      {{ range $v := .Files }}
+        <li><a href="{{ $v.FullPath }}">{{ $v.Name }}</a></li>
+      {{ end }}
+    </ul>
+  {{ else }}
+    <em>There doesn't seem to be anything here...</em>
+  {{ end }}
+</p>
+</body>
+</html>
