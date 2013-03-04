@@ -21,7 +21,7 @@ type upload struct {
 
 func makeUpload() uint64 {
 	id := uint64(rand.Int63())
-	for _, ok := uploads[id]; id != 0 && !ok; _, ok = uploads[id] {
+	for _, ok := uploads[id]; id == 0 && ok; _, ok = uploads[id] {
 		id = uint64(rand.Int63())
 	}
 	mutex := new(sync.RWMutex)
