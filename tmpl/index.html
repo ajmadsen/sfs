@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" media="screen" href="static/bootstrap/css/bootstrap.min.css" />
 </head>
-<body style="padding: 40px 160px">
-  <div class="well well-large">
+<body lang="en" style="padding-top:40px">
+  <div class="well well-large offset2 span10">
     <div>
       <a href="#uploadModal" class="close" data-toggle="modal">+</a>
       <h3>File List</h3>
     </div>
-    <ul>{{ template "filelist.html" .Files }}</ul>
+    <ul id="fileList">{{ template "filelist.html" .Files }}</ul>
   </div>
   <div id="uploadModal" class="modal hide fade" tabindex="-1" role="dialog">
     <div class="modal-header">
