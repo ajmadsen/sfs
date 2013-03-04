@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"html/template"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -13,12 +15,17 @@ import (
 const (
 	filesPath = "/files/"
 	filesDir  = "/Volumes/Storage/files"
-	maxSize   = 20 * 1024 * 1024
+	maxSize   = 20 * 1024 * 1024 * 1024
 )
 
 var (
-	nameSanitizer = regexp.MustCompile(`[^\w-.]`)
+	nameSanitizer = regexp.MustCompile(`[^\w-. ]`)
+	templates     = template.Must(template.ParseFiles("tmpl/filelist.html", "tmpl/index.html"))
 )
+
+type mainpage struct {
+	Files []file
+}
 
 func HandleNewUpload(w http.ResponseWriter, r *http.Request) {
 	id := makeUpload()
@@ -53,6 +60,7 @@ func HandleFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 	w.Header().Add("Content-Disposition", "attachment; filename=\""+fn.Name()+"\"")
+	log.Println("File", fn.Name(), "requested from", r.RemoteAddr)
 	http.ServeContent(w, r, "", time.Time{}, f)
 }
 
@@ -68,7 +76,7 @@ func HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.ContentLength > maxSize {
-		http.Error(w, "File too large", http.StatusNotAcceptable)
+		http.Error(w, "File too large", http.StatusForbidden)
 		return
 	}
 	pr, err := r.MultipartReader()
@@ -80,10 +88,16 @@ func HandleUpload(w http.ResponseWriter, r *http.Request) {
 	for ; p.FormName() != "file" && err == nil; p, err = pr.NextPart() {
 	}
 	if err != nil {
-		http.Error(w, "Invalid request", http.StatusNotAcceptable)
+		http.Error(w, "Invalid request", http.StatusForbidden)
 		return
 	}
 	filest := SanitizeName(p.FileName())
+	err = addFile(&filest)
+	if err != nil {
+		log.Println("Db error:", err.Error())
+		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	f, err := os.Create(filest.Path())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -94,6 +108,7 @@ func HandleUpload(w http.ResponseWriter, r *http.Request) {
 	uploadsMutex.RUnlock()
 	ul.size = r.ContentLength
 	buf := make([]byte, 1024*1024)
+	log.Print("Upload started from:", r.RemoteAddr)
 	for {
 		n, err := p.Read(buf)
 		if n > 0 {
@@ -118,16 +133,16 @@ func HandleUpload(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			f.Close()
 			os.Remove(filest.Path())
+			uploadsMutex.Lock()
+			delete(uploads, ul.id)
+			uploadsMutex.Unlock()
 			return
 		}
 	}
 	f.Close()
 	p.Close()
-	err = addFile(&filest)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		os.Remove(filest.Path())
-	}
+	w.WriteHeader(http.StatusOK)
+	log.Println("Upload complete")
 }
 
 func HandleProgress(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +156,7 @@ func HandleProgress(w http.ResponseWriter, r *http.Request) {
 	ul, ok := uploads[id]
 	uploadsMutex.RUnlock()
 	if !ok {
-		http.Error(w, "No such ID", http.StatusNotAcceptable)
+		http.Error(w, "No such ID", http.StatusForbidden)
 		return
 	}
 	ul.mutex.RLock()
@@ -173,7 +188,7 @@ func HandleUpdates(w http.ResponseWriter, r *http.Request) {
 	stime := r.URL.Path
 	isec, err := strconv.ParseInt(stime, 10, 64)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotAcceptable)
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	t := time.Unix(isec, 0)
@@ -182,5 +197,24 @@ func HandleUpdates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = files // TODO: Everything
+	err = templates.ExecuteTemplate(w, "filelist.html", files)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func HandleMain(w http.ResponseWriter, r *http.Request) {
+	log.Println("Main page requested from", r.RemoteAddr)
+	files, err := getFilesSince(time.Time{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	mp := mainpage{files}
+	err = templates.ExecuteTemplate(w, "index.html", mp)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
