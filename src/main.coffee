@@ -2,9 +2,12 @@ ulurl = "/upload"
 statusurl = "/status/"
 uploading = false
 ulid = -1
+lastUpdate = 0
 
 $(document).ready ->
   $("#file").filestyle()
+  lastUpdate = Math.floor(new Date().getTime() / 1000)
+  doUpdate()
 
 doUpload = ->
   return false if not $("#file").val()?.length
@@ -33,5 +36,16 @@ doProgress = ->
     $("pbar").style 'width', prog+'%'
     uploading = false if complete
   .always ->
-    window.setTimeout(doProgress, 1000) if uploading
+    window.setTimeout doProgress, 1000 if uploading
+  return true
+
+doUpdate = ->
+  $.ajax
+    url: '/updates/' + lastUpdate
+    type: 'GET'
+  .done (data) ->
+    $("#fileList").prepend($.trim(data))
+  .always ->
+    window.setTimeout doUpdate, 1000
+  lastUpdate = Math.floor(new Date().getTime() / 1000)
   return true
