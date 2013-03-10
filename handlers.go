@@ -161,3 +161,16 @@ func HandleMain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+func init() {
+	if _, err := os.Stat(filesDir); os.IsNotExist(err) {
+		if err := os.Mkdir(filesDir, 0755); err != nil {
+			panic(err)
+		}
+	}
+	if _, err := os.Stat(tempDir); os.IsNotExist(err) {
+		if err := os.Mkdir(tempDir, 0755); err != nil {
+			panic(err)
+		}
+	}
+}

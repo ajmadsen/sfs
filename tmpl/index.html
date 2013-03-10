@@ -4,6 +4,7 @@
   <title>Files</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="static/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="static/css/bootstrap-fileupload.min.css" />
 </head>
 <body lang="en" style="padding-top:40px">
   <div class="well well-large offset2 span10">
@@ -19,8 +20,14 @@
     </div>
     <div class="modal-body">
       <form name="upload" id="upload" enctype="multipart/form-data" method="POST" target="ulframe" action="about:blank">
-        <div class="control-group">
-          <input type="file" name="file" id="file" />
+        <div class="fileupload fileupload-new" data-provides="fileupload">
+          <span class="btn btn-file">
+            <span class="fileupload-new">Select file</span>
+            <span class="fileupload-exists">Change</span>
+            <input type="file" name="file"/>
+          </span>
+          <span class="fileupload-preview"></span>
+          <a href="#" class="close fileupload-exists" data-dismiss="fileupload" style="float: none">×</a>
         </div>
       </form>
     </div>
@@ -47,6 +54,6 @@
   <script src="static/js/jquery.jsonrpc.min.js"></script>
   <script src="static/js/project.js"></script>
   <script src="static/js/bootstrap.min.js"></script>
-  <script src="static/js/bootstrap-filestyle.js"></script>
+  <script src="static/js/bootstrap-fileupload.min.js"></script>
 </body>
 </html>
