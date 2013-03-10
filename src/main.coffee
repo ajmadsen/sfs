@@ -5,8 +5,8 @@ ulid = -1
 lastId = 0
 
 $(document).ready ->
-  $("#file").filestyle()
-  lid = $("#fileList").children(":first")?.attr('id').replace(/file/, '')
+  # $("#file").filestyle()
+  lid = $("#fileList").children(":first")?.attr('id')?.replace(/file/, '')
   lastId = parseInt(lid, 10) or -1
   $.jsonRPC.setup
     endPoint: '/rpc'
@@ -24,10 +24,10 @@ stopLoad = ->
 finishUpload = ->
   uploading = false
   $("#progressModal").modal('hide')
-  $("#progressBar").css 'width', '100%'
+  $("#progressBar").css 'width', '0%'
 
 doUpload = ->
-  return false if not $("#file").val()?.length
+  return false if not $('[data-provides="fileupload"]').children(".fileupload-preview:first").html()?.length
   $.jsonRPC.request 'NewUpload',
     params: []
     success: (r) ->
