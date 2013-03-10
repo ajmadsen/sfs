@@ -2,50 +2,81 @@ ulurl = "/upload"
 statusurl = "/status/"
 uploading = false
 ulid = -1
-lastUpdate = 0
+lastId = 0
 
 $(document).ready ->
   $("#file").filestyle()
-  lastUpdate = Math.floor(new Date().getTime() / 1000)
+  lid = $("#fileList").children(":first")?.attr('id').replace(/file/, '')
+  lastId = parseInt(lid, 10) or -1
+  $.jsonRPC.setup
+    endPoint: '/rpc'
+    namespace: 'UploadService'
   doUpdate()
+
+stopLoad = ->
+  iframe = document.getElementById('ulframe')
+  if iframe.contentWindow.document.execCommand
+    iframe.contentWindow.document.execCommand('Stop')
+  else
+    iframe.contentWindow.stop()
+  $(iframe).attr 'src', 'javascript:false'
+
+finishUpload = ->
+  uploading = false
+  $("#progressModal").modal('hide')
+  $("#progressBar").css 'width', '100%'
 
 doUpload = ->
   return false if not $("#file").val()?.length
-  $.ajax
-    url: '/new_file'
-    type: 'GET'
-  .done (data) ->
-    struct = JSON.parse(data)
-    ulid = struct['Ulid']
-    $("#upload").attr 'action', ulurl + "?ul=" + ulid
-    $("#upload").submit()
-  uploading = true
+  $.jsonRPC.request 'NewUpload',
+    params: []
+    success: (r) ->
+      ulid = r.result.Ulid
+      $("#upload").attr 'action', ulurl + "?ul=" + ulid
+      $("#upload").submit()
+      uploading = true
+      $("#progressModal").modal('show')
+      window.setTimeout(doProgress, 500)
+    error: (r) ->
+      error = r.error
+      alert(error)
   return false
 
 doProgress = ->
   return false if not uploading
-  $.ajax  
-    url: '/progress/' + ulid
-    type: 'GET'
-  .done (data) ->
-    struct = JSON.parse(data)
-    p = struct['Uled']
-    t = struct['Total']
-    complete = struct['Complete']
-    prog = (+p) * 100.0 / (+t)
-    $("pbar").style 'width', prog+'%'
-    uploading = false if complete
-  .always ->
-    window.setTimeout doProgress, 1000 if uploading
+  requestObj = {Ulid: ulid}
+  $.jsonRPC.request 'Status',
+    params: [requestObj]
+    success: (r) ->
+      if not r.result.Status.Started
+        return false
+      if r.result.Status.Completed
+        finishUpload()
+        return true
+      u = r.result.Status.Uploaded
+      t = r.result.Status.Total
+      p = "" + Math.floor(u * 100 / t) + "%"
+      $("#progressBar").css 'width', p
+      window.setTimeout(doProgress, 500) if uploading
+    error: (r) ->
+      error = r.error
+      console.log(error)
+      window.setTimeout(doProgress, 500) if uploading
+  return true
+
+doCancel = ->
+  return false if not uploading
+  stopLoad()
+  finishUpload()
   return true
 
 doUpdate = ->
-  $.ajax
-    url: '/updates/' + lastUpdate
-    type: 'GET'
-  .done (data) ->
-    $("#fileList").prepend($.trim(data))
-  .always ->
-    window.setTimeout doUpdate, 1000
-  lastUpdate = Math.floor(new Date().getTime() / 1000)
+  requestObj = {LastId: lastId}
+  $.jsonRPC.request 'Updates',
+    params: [requestObj]
+    success: (r) ->
+      if lastId < r.result.LastId
+        lastId = r.result.LastId
+        $("#fileList").prepend $.trim(r.result.Updates)
+  window.setTimeout(doUpdate, 5000)
   return true
