@@ -3,7 +3,7 @@
 <head>
   <title>Files</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="static/bootstrap/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="static/css/bootstrap.min.css" />
 </head>
 <body lang="en" style="padding-top:40px">
   <div class="well well-large offset2 span10">
@@ -29,10 +29,24 @@
       <button class="btn btn-primary" data-dismiss="modal" onclick="return doUpload();">Upload</button>
     </div>
   </div>
+  <div id="progressModal" class="modal hide fade" tabindex="-1" role="dialog">
+    <div class="modal-header">
+      <h3>File Upload</h3>
+    </div>
+    <div class="modal-body">
+      <div class="progress progress-striped active">
+        <div class="bar" id="progressBar" style="width: 0%;"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" data-dismiss="modal" onclick="return doCancel();">Cancel</button>
+    </div>
+  </div>
   <iframe name="ulframe" id="ulframe" style="width:0;height:0;border:0 solid #fff;" src="about:blank"></iframe>
-  <script src="static/jquery-1.9.1.js"></script>
-  <script src="static/project.js"></script>
-  <script src="static/bootstrap/js/bootstrap.min.js"></script>
-  <script src="static/bootstrap-filestyle.js"></script>
+  <script src="static/js/jquery-1.9.1.js"></script>
+  <script src="static/js/jquery.jsonrpc.min.js"></script>
+  <script src="static/js/project.js"></script>
+  <script src="static/js/bootstrap.min.js"></script>
+  <script src="static/js/bootstrap-filestyle.js"></script>
 </body>
 </html>

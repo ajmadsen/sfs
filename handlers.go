@@ -1,45 +1,32 @@
 package main
 
 import (
-	"encoding/json"
 	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"regexp"
 	"strconv"
 	"time"
 )
 
 const (
-	filesPath = "/files/"
-	filesDir  = "/Volumes/Storage/files"
-	maxSize   = 20 * 1024 * 1024 * 1024
+	filesPath  = "/files/"
+	filesDir   = "./files"
+	tempPrefix = "sfsUpload"
+	maxSize    = 20 * 1024 * 1024 * 1024
 )
 
 var (
 	nameSanitizer = regexp.MustCompile(`[^\w-. ]`)
 	templates     = template.Must(template.ParseFiles("tmpl/filelist.html", "tmpl/index.html"))
+	tempDir       = path.Join(filesDir, "temp/")
 )
 
 type mainpage struct {
-	Files []file
-}
-
-func HandleNewUpload(w http.ResponseWriter, r *http.Request) {
-	id := makeUpload()
-	respstruct := struct {
-		Status string
-		Ulid   string
-	}{"success", strconv.FormatUint(id, 16)}
-	var response []byte
-	response, err := json.Marshal(respstruct)
-	if err != nil {
-		http.Error(w, "{\"Status\": \"error\", \"Etring\": \""+err.Error()+"\"}", http.StatusInternalServerError)
-		return
-	}
-	w.Write(response)
+	Files []*file
 }
 
 func HandleFile(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +35,7 @@ func HandleFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fn, err := getFile(int64(id))
+	fn, err := GetFileById(int64(id))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -65,15 +52,17 @@ func HandleFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleUpload(w http.ResponseWriter, r *http.Request) {
+	var id uint64
 	ulid := r.URL.Query().Get("ul")
-	if ulid == "" {
-		http.Error(w, "Unauthorized", http.StatusForbidden)
-		return
-	}
-	id, err := strconv.ParseUint(ulid, 16, 64)
-	if err != nil {
-		http.Error(w, "Invalid ID", http.StatusForbidden)
-		return
+	if ulid != "" {
+		var err error
+		id, err = strconv.ParseUint(ulid, 10, 64)
+		if err != nil {
+			http.Error(w, "Invalid ID", http.StatusForbidden)
+			return
+		}
+	} else {
+		id = makeUpload()
 	}
 	if r.ContentLength > maxSize {
 		http.Error(w, "File too large", http.StatusForbidden)
@@ -91,63 +80,14 @@ func HandleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request", http.StatusForbidden)
 		return
 	}
-	filest := SanitizeName(p.FileName())
-	err = addFile(&filest)
+	defer p.Close()
+	filest, err := PrepareFile(p.FileName())
 	if err != nil {
-		log.Println("Db error:", err.Error())
-		http.Error(w, "Database error: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	f, err := os.Create(filest.Path())
-	if err != nil {
+		log.Println(err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	uploadsMutex.RLock()
-	ul := uploads[id]
-	uploadsMutex.RUnlock()
-	ul.size = r.ContentLength
-	buf := make([]byte, 1024*1024)
-	log.Print("Upload started from:", r.RemoteAddr)
-	for {
-		n, err := p.Read(buf)
-		if n > 0 {
-			wr, err2 := f.Write(buf[0:n])
-			if err2 != nil {
-				http.Error(w, err2.Error(), http.StatusInternalServerError)
-				f.Close()
-				os.Remove(filest.Path())
-				return
-			}
-			ul.mutex.Lock()
-			ul.uploaded += int64(wr)
-			ul.mutex.Unlock()
-		}
-		if err == io.EOF {
-			ul.mutex.Lock()
-			ul.completed = true
-			ul.mutex.Unlock()
-			break
-		}
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			f.Close()
-			os.Remove(filest.Path())
-			uploadsMutex.Lock()
-			delete(uploads, ul.id)
-			uploadsMutex.Unlock()
-			return
-		}
-	}
-	f.Close()
-	p.Close()
-	w.WriteHeader(http.StatusOK)
-	log.Println("Upload complete")
-}
-
-func HandleProgress(w http.ResponseWriter, r *http.Request) {
-	sid := r.URL.Path
-	id, err := strconv.ParseUint(sid, 10, 64)
+	f, err := filest.TempFile()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -156,57 +96,60 @@ func HandleProgress(w http.ResponseWriter, r *http.Request) {
 	ul, ok := uploads[id]
 	uploadsMutex.RUnlock()
 	if !ok {
-		http.Error(w, "No such ID", http.StatusForbidden)
+		http.Error(w, ErrInvalidId.Error(), http.StatusInternalServerError)
 		return
 	}
-	ul.mutex.RLock()
-	total := ul.size
-	uled := ul.uploaded
-	completed := ul.completed
-	ul.mutex.RUnlock()
-	var resp []byte
-	respstruct := struct {
-		Status    string
-		Total     int64
-		Uled      int64
-		Completed bool
-	}{"success", total, uled, completed}
-	resp, err = json.Marshal(respstruct)
-	if err != nil {
-		http.Error(w, "{\"Status\": \"error\", \"Error\": \""+err.Error()+"\"}", http.StatusInternalServerError)
+	ul.mutex.Lock()
+	if ul.destroyed {
+		ul.mutex.Unlock()
+		http.Error(w, "Invalid upload id", http.StatusForbidden)
 		return
 	}
-	if completed {
-		uploadsMutex.Lock()
-		delete(uploads, ul.id)
-		uploadsMutex.Lock()
+	ul.p.Total = r.ContentLength
+	ul.p.Started = true
+	ul.mutex.Unlock()
+	buf := make([]byte, 1024*1024)
+	log.Print("Upload started from:", r.RemoteAddr)
+	for {
+		n, err := p.Read(buf)
+		if n > 0 {
+			wr, err2 := f.Write(buf[0:n])
+			if err2 != nil {
+				http.Error(w, err2.Error(), http.StatusInternalServerError)
+				filest.Cancel()
+				ul.delete()
+				return
+			}
+			ul.mutex.Lock()
+			ul.p.Uploaded += int64(wr)
+			ul.mutex.Unlock()
+		}
+		if err == io.EOF {
+			ul.mutex.Lock()
+			ul.p.Completed = true
+			ul.mutex.Unlock()
+			break
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			filest.Cancel()
+			ul.delete()
+			return
+		}
 	}
-	w.Write(resp)
-}
-
-func HandleUpdates(w http.ResponseWriter, r *http.Request) {
-	stime := r.URL.Path
-	isec, err := strconv.ParseInt(stime, 10, 64)
+	err = filest.Commit()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
-	t := time.Unix(isec, 0)
-	files, err := getFilesSince(t)
-	if err != nil {
+		filest.Cancel()
+		ul.delete()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
-	err = templates.ExecuteTemplate(w, "filelist.html", files)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	w.WriteHeader(http.StatusOK)
+	log.Println("Upload complete")
 }
 
 func HandleMain(w http.ResponseWriter, r *http.Request) {
 	log.Println("Main page requested from", r.RemoteAddr)
-	files, err := getFilesSince(time.Time{})
+	files, err := GetFilesSinceTime(time.Time{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
