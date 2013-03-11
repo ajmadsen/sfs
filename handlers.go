@@ -14,7 +14,7 @@ import (
 
 const (
 	filesPath  = "/files/"
-	filesDir   = "./files"
+	filesDir   = "/Volumes/Storage/files"
 	tempPrefix = "sfsUpload"
 	maxSize    = 20 * 1024 * 1024 * 1024
 )
@@ -144,7 +144,7 @@ func HandleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusOK)
-	log.Println("Upload complete")
+	log.Println("Upload complete: ", ul.id)
 }
 
 func HandleMain(w http.ResponseWriter, r *http.Request) {
